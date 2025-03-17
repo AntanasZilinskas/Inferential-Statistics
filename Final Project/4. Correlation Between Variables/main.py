@@ -1,95 +1,119 @@
 """
+task4_scatter_only.py
 
-Task 4: Correlation Between Variables
--------------------------------------
+Task 4: Correlation Between Variables (No Distribution Plots)
+-------------------------------------------------------------
 We examine how 'price' correlates with:
-  1) 'score_goodness'
-  2) 'distance_km'
-  3) 'number_of_reviews'
+   1) 'bedrooms'
+   2) 'bathrooms'
+   3) 'distance_km'
 
-We compute Pearson's r and visualize via scatter plots.
+Steps:
+1) Remove ±3σ outliers (pairwise) for each correlation.
+2) Compute Pearson's r on the outlier-trimmed subset.
+3) Create a scatter plot (with regression line) for each pair.
+
+Outputs:
+  - Figures in 'figures' subfolder
+  - Correlation stats in the console
 """
 
 import os
+import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
+import matplotlib.pyplot as plt
 from scipy.stats import pearsonr
 
-# ============ SETTINGS ============
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-CSV_FILE = os.path.join(parent_dir, "listings_with_goodness.csv")
+# --------------------- SETTINGS ---------------------
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PARENT_DIR  = os.path.dirname(CURRENT_DIR)
+CSV_FILE    = os.path.join(PARENT_DIR, "listings_with_goodness.csv")
 
-COL_PRICE         = "price"
-COL_GOODNESS      = "score_goodness"
-COL_DISTANCE      = "distance_km"
-COL_NUM_REVIEWS   = "number_of_reviews"
+COL_PRICE     = "price"
+COL_BEDROOMS  = "bedrooms"
+COL_BATHROOMS = "bathrooms"
+COL_DISTANCE  = "distance_km"
 
-SCATTER_OUTDIR    = os.path.join(current_dir, "figures_correlations")
-os.makedirs(SCATTER_OUTDIR, exist_ok=True)
-# ==================================
+# Choose your pairs with price:
+PAIRS = [
+    (COL_PRICE, COL_BEDROOMS, "Price vs Bedrooms"),
+    (COL_PRICE, COL_BATHROOMS, "Price vs Bathrooms"),
+    (COL_PRICE, COL_DISTANCE,  "Price vs Distance (km)"),
+]
+
+OUTPUT_DIR = os.path.join(CURRENT_DIR, "figures")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+# ----------------------------------------------------
+
+
+def remove_3sigma_outliers_pairwise(df, x_col, y_col):
+    """
+    For each pair (x_col, y_col):
+      1) Drop rows missing either x_col or y_col
+      2) Remove rows where x_col is beyond ±3σ of its mean
+      3) Remove rows where y_col is beyond ±3σ of its mean
+    Return the filtered subset.
+    """
+    df_pair = df[[x_col, y_col]].dropna().copy()
+    
+    # For x_col
+    x_mean = df_pair[x_col].mean()
+    x_std  = df_pair[x_col].std()
+    x_low, x_high = x_mean - 3*x_std, x_mean + 3*x_std
+
+    # For y_col
+    y_mean = df_pair[y_col].mean()
+    y_std  = df_pair[y_col].std()
+    y_low, y_high = y_mean - 3*y_std, y_mean + 3*y_std
+
+    # Keep only rows within ±3σ for both x_col and y_col
+    mask = (
+        (df_pair[x_col] >= x_low) & (df_pair[x_col] <= x_high) &
+        (df_pair[y_col] >= y_low) & (df_pair[y_col] <= y_high)
+    )
+    return df_pair[mask]
+
 
 def main():
-    # 1) Read data
-    df = pd.read_csv(CSV_FILE, low_memory=False)
+    print(f"Reading data from: {CSV_FILE}")
+    df = pd.read_csv(CSV_FILE, low_memory=True)
 
-    # 2) Drop rows that are missing relevant columns
-    cols_of_interest = [COL_PRICE, COL_GOODNESS, COL_DISTANCE, COL_NUM_REVIEWS]
-    df_sub = df[cols_of_interest].dropna()
+    print("\n=== Pearson Correlations (±3σ outlier removal per pair) ===\n")
+    for (col_price, col_other, title_str) in PAIRS:
+        # 1) Filter out outliers pairwise
+        df_filtered = remove_3sigma_outliers_pairwise(df, col_price, col_other)
+        n_filtered  = len(df_filtered)
+        if n_filtered < 2:
+            print(f"Insufficient data for {col_price} vs {col_other} after 3σ filtering.")
+            continue
+        
+        # 2) Compute Pearson correlation
+        r_val, p_val = pearsonr(df_filtered[col_price], df_filtered[col_other])
+        print(f"{col_price} vs {col_other}: r={r_val:.3f}, p={p_val:.4g}, n={n_filtered}")
 
-    # 3) Compute correlation (Pearson's r) for each pair with 'price'
-    #    We'll store results in a dictionary for clarity
-    corr_results = {}
+        # 3) Scatter plot with regression line
+        out_fname = f"scatter_{col_price}_vs_{col_other}.png"
+        out_path  = os.path.join(OUTPUT_DIR, out_fname)
+        plot_scatter(df_filtered, col_price, col_other, r_val, p_val, title_str, out_path)
 
-    # a) price vs score_goodness
-    r_goodness, p_goodness = pearsonr(df_sub[COL_PRICE], df_sub[COL_GOODNESS])
-    corr_results["price_score_goodness"] = (r_goodness, p_goodness)
 
-    # b) price vs distance_km
-    r_distance, p_distance = pearsonr(df_sub[COL_PRICE], df_sub[COL_DISTANCE])
-    corr_results["price_distance"] = (r_distance, p_distance)
-
-    # c) price vs number_of_reviews
-    r_reviews, p_reviews = pearsonr(df_sub[COL_PRICE], df_sub[COL_NUM_REVIEWS])
-    corr_results["price_num_reviews"] = (r_reviews, p_reviews)
-
-    # Print the correlation results
-    print("\n=== CORRELATIONS WITH 'price' (Pearson) ===")
-    print(f"1) price vs. score_goodness: r={r_goodness:.3f}, p={p_goodness:.4f}")
-    print(f"2) price vs. distance_km   : r={r_distance:.3f}, p={p_distance:.4f}")
-    print(f"3) price vs. number_of_reviews: r={r_reviews:.3f}, p={p_reviews:.4f}")
-
-    # 4) Generate scatter plots
-    plot_scatter_with_corr(df_sub, COL_PRICE, COL_GOODNESS,
-                           corr_results["price_score_goodness"],
-                           "Price vs. Score Goodness",
-                           os.path.join(SCATTER_OUTDIR, "scatter_price_vs_score_goodness.png"))
-
-    plot_scatter_with_corr(df_sub, COL_PRICE, COL_DISTANCE,
-                           corr_results["price_distance"],
-                           "Price vs. Distance (km)",
-                           os.path.join(SCATTER_OUTDIR, "scatter_price_vs_distance_km.png"))
-
-    plot_scatter_with_corr(df_sub, COL_PRICE, COL_NUM_REVIEWS,
-                           corr_results["price_num_reviews"],
-                           "Price vs. Number of Reviews",
-                           os.path.join(SCATTER_OUTDIR, "scatter_price_vs_number_of_reviews.png"))
-
-def plot_scatter_with_corr(df, x_col, y_col, corr_tuple, title, outpath):
+def plot_scatter(df, col_y, col_x, r_val, p_val, plot_title, outpath):
     """
-    Create a scatter plot with a regression line, labeling the Pearson correlation in the title.
-    corr_tuple = (r_value, p_value)
+    Create a scatter plot (col_x vs col_y) with a regression line.
+    Label the plot with Pearson r and p-value, and note outlier removal.
     """
-    r_val, p_val = corr_tuple
     sns.set_style("whitegrid")
     plt.figure(figsize=(6,4))
-    sns.regplot(x=x_col, y=y_col, data=df,
-                scatter_kws={'alpha':0.3}, line_kws={'color':'red'})
-    plt.title(f"{title}\nPearson r={r_val:.2f}, p={p_val:.4f}")
+    sns.regplot(x=col_x, y=col_y, data=df,
+                scatter_kws={'alpha': 0.3},
+                line_kws={'color': 'red'})
+    plt.title(f"{plot_title}\n(±3σ filtered) r={r_val:.3f}, p={p_val:.4g}")
     plt.tight_layout()
     plt.savefig(outpath, dpi=300)
     plt.close()
+    print(f"Saved plot: {outpath}")
+
 
 if __name__ == "__main__":
     main()

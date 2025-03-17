@@ -1,138 +1,180 @@
-#!/usr/bin/env python3
-
 """
-superhost_price_test.py
+main.py
+Demonstrates the Central Limit Theorem (CLT) in two ways:
+  1) Overlaid Independent Batches: Distros of sample means for n=10, n=50, n=200
+  2) Running Averages: A single "stream" approach repeated multiple times, illustrating convergence
 
-Hypothesis:
-  H0: mean(Price_superhost) <= mean(Price_non_superhost)
-  HA: mean(Price_superhost) > mean(Price_non_superhost)
-
-We demonstrate:
-  1) Welch's t-test (one-sided).
-  2) Mann–Whitney U test (non-parametric) for confirmation.
-  3) A bootstrapped 95% CI for difference in means.
-
-Additionally uses a "current_dir" approach to locate the CSV.
+We also remove outliers (beyond +/- 3σ from the raw data) to avoid weird results. 
+No command-line arguments are required.
 """
 
-import os
-import pandas as pd
+
 import numpy as np
-from scipy.stats import ttest_ind, mannwhitneyu
+import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import norm
+import os
+# --------------- DEFINED SETTINGS ---------------
 
-# =================== PATH SETTINGS ===================
-current_dir  = os.path.dirname(os.path.abspath(__file__))
-CSV_FILE     = os.path.join(os.path.dirname(current_dir), "listings_with_goodness.csv")
-# =====================================================
+current_dir = os.path.dirname(os.path.abspath(__file__))
+CSV_FILE   = os.path.join(os.path.dirname(current_dir), "listings_with_goodness.csv")
+COLUMN     = "distance_km"                # Numeric column to verify the CLT on
+CLIP_3SIGMA = True                      # Whether to remove outliers beyond +/- 3σ
+# Approach 1: sample sizes + number of means
+SAMPLE_SIZES = [10, 50, 200]
+N_EXPERIMENTS = 2000
+# Approach 2: total draws for the "stream" + number of runs
+TOTAL_DRAWS = 5000
+NUM_RUNS    = 5
 
-# =================== COLUMN SETTINGS =================
-COL_PRICE     = "price"
-COL_SUPERHOST = "host_is_superhost"  # e.g. 't' or 'f'
-SPARENT_VAL   = "t"
-NONSUPER_VAL  = "f"
-ALPHA         = 0.05
-USE_LOG_PRICE = False        # set True if your price is heavily skewed
-REMOVE_OUTLIERS  = True      # remove ±3σ outliers if you want
-# =====================================================
+# Create figures directory if it doesn't exist
+FIGURES_DIR = os.path.join(current_dir, "figures")
+if not os.path.exists(FIGURES_DIR):
+    os.makedirs(FIGURES_DIR)
+    print(f"Created figures directory: {FIGURES_DIR}")
+# -----------------------------------------------------
 
-def remove_3sigma_outliers(arr):
+def clean_outliers_3sigma(arr):
+    """
+    Removes elements lying outside mean +/- 3*std. 
+    Returns the cleaned array.
+    """
     mean_val = np.mean(arr)
-    std_val  = np.std(arr, ddof=1)
-    low_cut  = mean_val - 3 * std_val
-    high_cut = mean_val + 3 * std_val
+    std_val  = np.std(arr)
+    low_cut  = mean_val - 3.0 * std_val
+    high_cut = mean_val + 3.0 * std_val
     return arr[(arr >= low_cut) & (arr <= high_cut)]
 
-def bootstrap_mean_diff(data1, data2, n_boot=2000, random_state=42):
+def overlaid_independent_batches_clt(data_array, sample_sizes, n_experiments=2000):
     """
-    Returns a (low, high) 95% CI for the difference in means (data1 - data2)
-    via a simple bootstrap resampling approach.
+    Approach 1: For each n in sample_sizes, generate n_experiments sample means
+    from data_array, then overlay them in a single histogram with different colors,
+    plus theoretical normal overlays.
     """
-    rng = np.random.default_rng(random_state)
-    diffs = []
-    size1 = len(data1)
-    size2 = len(data2)
-    for _ in range(n_boot):
-        sample1 = rng.choice(data1, size1, replace=True)
-        sample2 = rng.choice(data2, size2, replace=True)
-        diffs.append(np.mean(sample1) - np.mean(sample2))
-    diffs = np.array(diffs)
-    ci_lower = np.percentile(diffs, 2.5)
-    ci_upper = np.percentile(diffs, 97.5)
-    return ci_lower, ci_upper
+    pop_mean = data_array.mean()
+    pop_var  = data_array.var(ddof=1)
+
+    plt.figure(figsize=(9,6))
+    colors = ["#1f77b4", "#ff7f0e", "#2ca02c"]  # 3 distinct colors
+    bins   = 40
+
+    min_val, max_val = float("inf"), float("-inf")
+    for i, n in enumerate(sample_sizes):
+        means = []
+        for _ in range(n_experiments):
+            sample = np.random.choice(data_array, size=n, replace=True)
+            means.append(sample.mean())
+        means = np.array(means)
+
+        # Expand the global range for x-limits
+        min_val = min(min_val, means.min())
+        max_val = max(max_val, means.max())
+
+        # Plot histogram (stat='density' to show PDF)
+        sns.histplot(means, bins=bins, color=colors[i], alpha=0.3, 
+                     stat='density', label=f"n={n}", kde=False)
+
+        # Theoretical normal
+        theory_var   = pop_var / n
+        theory_sigma = np.sqrt(theory_var)
+        x_vals = np.linspace(means.min(), means.max(), 200)
+        pdf_theoretical = norm.pdf(x_vals, loc=pop_mean, scale=theory_sigma)
+        plt.plot(x_vals, pdf_theoretical, '--', 
+                 color=colors[i], linewidth=2)
+
+    # Add vertical line for the true mean
+    plt.axvline(x=pop_mean, color='red', linestyle='-', linewidth=2,
+                label=f'True Mean: {pop_mean:.2f}')
+
+    plt.title(f"Overlaid Distros of Sample Means\nn={sample_sizes} (each: {n_experiments} means)")
+    plt.xlabel("Sample Mean")
+    plt.ylabel("Density")
+    plt.xlim([min_val, max_val])
+    plt.legend()
+    plt.tight_layout()
+    
+    # Save the figure
+    fig_path = os.path.join(FIGURES_DIR, f"{COLUMN}_overlaid_batches_clt.png")
+    plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+    print(f"Figure saved: {fig_path}")
+    
+    plt.show()
+
+def running_averages_clt(data_array, total_draws=5000, num_runs=5):
+    """
+    Approach 2: Show how a single stream's running average converges over time.
+    Repeated num_runs times.
+    """
+    pop_mean = data_array.mean()
+
+    plt.figure(figsize=(10, 5))
+
+    for run_idx in range(num_runs):
+        draws = np.random.choice(data_array, size=total_draws, replace=True)
+        cumsums = np.cumsum(draws)
+        running_avg = cumsums / (np.arange(1, total_draws + 1))
+        plt.plot(running_avg, alpha=0.7, label=f"Run {run_idx+1}")
+
+    plt.axhline(y=pop_mean, color='red', linestyle='--', linewidth=2, 
+                label=f"True mean ~ {pop_mean:.2f}")
+    plt.title(f"{num_runs} Runs of Running Averages (total_draws={total_draws})")
+    plt.xlabel("Sequential Draws")
+    plt.ylabel("Running Average")
+    plt.grid(True, alpha=0.3)
+    plt.legend(loc="best")
+    plt.tight_layout()
+    
+    # Save the figure
+    fig_path = os.path.join(FIGURES_DIR, f"{COLUMN}_running_averages_clt.png")
+    plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+    print(f"Figure saved: {fig_path}")
+    
+    plt.show()
 
 def main():
-    print(f"Reading dataset from: {CSV_FILE}")
+    # 1) Load data
+    print(f"Loading '{CSV_FILE}' ...")
     df = pd.read_csv(CSV_FILE, low_memory=False)
-    if COL_PRICE not in df.columns or COL_SUPERHOST not in df.columns:
-        print("Error: Missing required columns. Exiting.")
+    if COLUMN not in df.columns:
+        print(f"Error: column '{COLUMN}' not found in the DataFrame.")
+        print(f"Available columns: {', '.join(df.columns)}")
+        return
+    
+    data_array = df[COLUMN].dropna().values
+    print(f"Raw data size for '{COLUMN}': {len(data_array)}")
+    if len(data_array) == 0:
+        print("No valid data after dropping NaNs. Exiting.")
         return
 
-    df_sh  = df[df[COL_SUPERHOST] == SPARENT_VAL]
-    df_nsh = df[df[COL_SUPERHOST] == NONSUPER_VAL]
-    data_sh  = df_sh[COL_PRICE].dropna().values
-    data_nsh = df_nsh[COL_PRICE].dropna().values
+    # 2) Optionally remove +/- 3σ outliers
+    if CLIP_3SIGMA:
+        before_size = len(data_array)
+        data_array = clean_outliers_3sigma(data_array)
+        after_size = len(data_array)
+        print(f"Removed {before_size - after_size} outliers beyond ±3σ. Remaining data size: {after_size}")
 
-    # Optional outlier removal
-    if REMOVE_OUTLIERS:
-        before_sh  = len(data_sh)
-        before_nsh = len(data_nsh)
-        data_sh  = remove_3sigma_outliers(data_sh)
-        data_nsh = remove_3sigma_outliers(data_nsh)
-        after_sh  = len(data_sh)
-        after_nsh = len(data_nsh)
-        print(f"Removed outliers ±3σ: Superhost from {before_sh} -> {after_sh}, "
-              f"Non-superhost from {before_nsh} -> {after_nsh}")
+    pop_mean = data_array.mean()
+    pop_std  = data_array.std(ddof=1)
+    print(f"Cleaned data stats -> Mean: {pop_mean:.4f}, Std: {pop_std:.4f}")
 
-    # Optional log transform to handle skewness
-    if USE_LOG_PRICE:
-        data_sh  = np.log1p(data_sh)
-        data_nsh = np.log1p(data_nsh)
+    # 3) Approach 1: Overlaid hist of sample means for n=10,50,200
+    print("\nRunning Overlaid Independent Batches CLT demonstration...")
+    overlaid_independent_batches_clt(
+        data_array,
+        sample_sizes=SAMPLE_SIZES,
+        n_experiments=N_EXPERIMENTS
+    )
 
-    # Welch's t-test (one-sided: superhost mean > non-superhost mean)
-    t_stat, p_val_two_sided = ttest_ind(data_sh, data_nsh, equal_var=False)
-    mean_sh  = np.mean(data_sh)
-    mean_nsh = np.mean(data_nsh)
-    diff_means = mean_sh - mean_nsh
+    # 4) Approach 2: Running Averages
+    print("\nRunning Running Averages CLT demonstration...")
+    running_averages_clt(
+        data_array,
+        total_draws=TOTAL_DRAWS,
+        num_runs=NUM_RUNS
+    )
 
-    if diff_means > 0:
-        p_val_one_sided = p_val_two_sided / 2.0
-    else:
-        p_val_one_sided = 1.0 - (p_val_two_sided / 2.0)
-
-    print("\n=== Welch's T-Test (One-Sided) for Superhost vs Non-Superhost ===")
-    print(f"Mean(Superhost) = {mean_sh:.2f}, Mean(Non-SH) = {mean_nsh:.2f}, diff={diff_means:.2f}")
-    print(f"T-statistic = {t_stat:.4f}, p-value(one-sided)={p_val_one_sided:.5g}")
-
-    if p_val_one_sided < ALPHA:
-        print("=> Reject H0 => Superhosts have significantly higher mean price.")
-    else:
-        print("=> Fail to reject H0 => No strong evidence superhosts have higher mean price.")
-
-    # Mann–Whitney U test (one-sided)
-    u_stat, p_val_mw_two_sided = mannwhitneyu(data_sh, data_nsh, alternative='two-sided')
-    median_sh  = np.median(data_sh)
-    median_nsh = np.median(data_nsh)
-    if median_sh > median_nsh:
-        p_val_mw_onesided = p_val_mw_two_sided / 2.0
-    else:
-        p_val_mw_onesided = 1.0 - (p_val_mw_two_sided / 2.0)
-
-    print("\n=== Mann–Whitney U Test (One-Sided) for Superhost vs Non-Superhost ===")
-    print(f"Median(SH)={median_sh:.2f}, Median(Non-SH)={median_nsh:.2f}")
-    print(f"U-stat={u_stat:.2f}, p-value(one-sided)={p_val_mw_onesided:.5g}")
-
-    if p_val_mw_onesided < ALPHA:
-        print("=> Reject H0 => Superhosts have significantly greater distribution stochastically.")
-    else:
-        print("=> Fail to reject H0 => No strong evidence superhosts have higher distribution.")
-
-    # Bootstrapped 95% CI for difference (superhost - non-superhost)
-    boot_low, boot_high = bootstrap_mean_diff(data_sh, data_nsh, n_boot=2000)
-    print("\n=== Bootstrapped 95% CI for difference in means (superhost - non-superhost) ===")
-    print(f"95% CI: [{boot_low:.2f}, {boot_high:.2f}]")
-
-    print("\nTest concluded successfully.")
+    print("\nAll CLT demonstrations completed successfully!")
 
 if __name__ == "__main__":
     main()

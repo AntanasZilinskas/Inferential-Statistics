@@ -1,5 +1,5 @@
 """
-superhost_price_test.py
+main.py
 
 Hypothesis:
  H0: mean(Price_superhost) <= mean(Price_non_superhost)
