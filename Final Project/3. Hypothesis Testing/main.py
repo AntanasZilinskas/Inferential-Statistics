@@ -84,65 +84,48 @@ def plot_two_panel_distribution(
     t_crit_2sided=None
 ):
     """
-    Create a 2-panel figure:
-     - Left: zoomed in up to the given percentile (e.g. 99th)
-     - Right: full distribution range
-    Each panel: Overlaid histogram for superhost vs. non-superhost,
-     plus optional KDE, vertical lines for means and CI, etc.
+    Create a single panel figure showing the distribution up to the given percentile.
+    Shows overlaid histogram for superhost vs. non-superhost,
+    plus optional KDE, vertical lines for means and CI, etc.
     """
     # Compute the cutoff
     max_val_sh = np.percentile(data_sh, percentile_cut)
     max_val_nsh= np.percentile(data_nsh, percentile_cut)
     clip_bound = max(max_val_sh, max_val_nsh)
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
+    fig, ax = plt.subplots(figsize=(10, 5))
     colors = ["#1f77b4", "#ff7f0e"]  # for superhost and non-superhost
     labels = ["Superhost", "Non-Superhost"]
 
-    # Helper function to plot a single panel
-    def plot_panel(ax, xlim=None, panel_title=""):
-        # histogram for each group
-        sns.histplot(data_sh, ax=ax, color=colors[0], alpha=0.4, kde=False,
-                     label=f"{labels[0]}", stat='density', bins=30)
-        sns.histplot(data_nsh, ax=ax, color=colors[1], alpha=0.4, kde=False,
-                     label=f"{labels[1]}", stat='density', bins=30)
+    # histogram for each group
+    sns.histplot(data_sh, ax=ax, color=colors[0], alpha=0.4, kde=False,
+                 label=f"{labels[0]}", stat='density', bins=30)
+    sns.histplot(data_nsh, ax=ax, color=colors[1], alpha=0.4, kde=False,
+                 label=f"{labels[1]}", stat='density', bins=30)
 
-        # Optional KDE
-        if SHOW_KDE:
-            sns.kdeplot(data_sh, ax=ax, color=colors[0], label=f"{labels[0]} KDE", lw=1.5)
-            sns.kdeplot(data_nsh, ax=ax, color=colors[1], label=f"{labels[1]} KDE", lw=1.5)
+    # Optional KDE
+    if SHOW_KDE:
+        sns.kdeplot(data_sh, ax=ax, color=colors[0], label=f"{labels[0]} KDE", lw=1.5)
+        sns.kdeplot(data_nsh, ax=ax, color=colors[1], label=f"{labels[1]} KDE", lw=1.5)
 
-        # Means
-        ax.axvline(mean_sh, color=colors[0], linestyle='--', label=f"Mean Superhost: {mean_sh:.2f}")
-        ax.axvline(mean_nsh, color=colors[1], linestyle='--', label=f"Mean Non-SH: {mean_nsh:.2f}")
+    # Means
+    ax.axvline(mean_sh, color=colors[0], linestyle='--', label=f"Mean Superhost: {mean_sh:.2f}")
+    ax.axvline(mean_nsh, color=colors[1], linestyle='--', label=f"Mean Non-SH: {mean_nsh:.2f}")
 
-        # CI lines for difference
-        ax.axvline(ci_lower, color="red", linestyle=":", label="95% CI Lower")
-        ax.axvline(ci_upper, color="red", linestyle=":", label="95% CI Upper")
+    # CI lines for difference
+    ax.axvline(ci_lower, color="red", linestyle=":", label="95% CI Lower")
+    ax.axvline(ci_upper, color="red", linestyle=":", label="95% CI Upper")
 
-        ax.set_title(panel_title)
-        ax.set_xlabel("Price")
-        ax.set_ylabel("Density")
-
-        if xlim is not None:
-            ax.set_xlim(0, xlim)
-
-        ax.legend()
-
-    # Left panel: zoomed in
-    plot_panel(axes[0], xlim=clip_bound, panel_title=f"Up to {percentile_cut}th percentile")
-
-    # Right panel: full range
-    # find overall max
-    overall_max = max(data_sh.max(), data_nsh.max())
-    plot_panel(axes[1], xlim=overall_max, panel_title="Full Range")
+    ax.set_xlabel("Price")
+    ax.set_ylabel("Density")
+    ax.set_xlim(0, clip_bound)
+    ax.legend()
 
     fig.suptitle(title, fontsize=14)
 
     # Optionally set log scale
     if APPLY_X_LOG_SCALE:
-        for ax in axes:
-            ax.set_xscale('log')
+        ax.set_xscale('log')
 
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -258,7 +241,7 @@ def main():
 
     print("\nTest concluded successfully.")
 
-    # 4) Plot with two subplots (zoom + full)
+    # 4) Plot with single panel (up to 99th percentile)
     figures_dir = os.path.join(current_dir, 'figures')
     os.makedirs(figures_dir, exist_ok=True)
     save_fig_path = os.path.join(figures_dir, 'superhost_vs_non_superhost_enhanced.png')

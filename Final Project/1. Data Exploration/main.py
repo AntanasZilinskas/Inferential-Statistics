@@ -55,7 +55,7 @@ def create_distance_price(df,
 
 def plot_three_features(df, columns, clip_percentile=0.99, save_dir="figures"):
     """
-    - Plots distributions of numeric features (histogram + KDE and boxplot).
+    - Plots distributions of numeric features (histogram + KDE).
     - Computes mean, variance, and other summary statistics.
     - Identifies outliers that lie outside three standard deviations from the mean.
     - Adds visual indicators for mean, median, std, and 3σ outlier boundaries.
@@ -107,99 +107,61 @@ def plot_three_features(df, columns, clip_percentile=0.99, save_dir="figures"):
         skew_val = data_vis.skew()
         print(f"Skewness (clipped): {skew_val:.4f}")
         
-        # Plot
-        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+        # Plot - only histogram with KDE (removed boxplot)
+        fig, ax = plt.subplots(figsize=(10, 5))
         fig.suptitle(f"{col.upper()} Distribution")
 
         # Histogram with KDE
         sns.histplot(
             data_vis,
             kde=True,
-            ax=axes[0],
+            ax=ax,
             color='skyblue',
             alpha=0.7
         )
-        axes[0].set_title(f"{col} (Histogram + KDE)")
-        axes[0].set_xlabel(col)
+        ax.set_title(f"{col} (Histogram + KDE)")
+        ax.set_xlabel(col)
         
         # Add vertical lines for statistics on histogram
         # Mean
-        axes[0].axvline(x=mean_val, color='green', linestyle='-', 
-                       label=f'Mean: {mean_val:.2f}')
+        ax.axvline(x=mean_val, color='green', linestyle='-', 
+                   label=f'Mean: {mean_val:.2f}')
         # Median
-        axes[0].axvline(x=median_val, color='blue', linestyle='-', 
-                       label=f'Median: {median_val:.2f}')
+        ax.axvline(x=median_val, color='blue', linestyle='-', 
+                   label=f'Median: {median_val:.2f}')
         
         # Standard deviation lines (±1σ)
         if mean_val + std_val <= upper_bound:
-            axes[0].axvline(x=mean_val + std_val, color='purple', linestyle=':', 
-                           label=f'Mean + 1σ: {mean_val + std_val:.2f}')
+            ax.axvline(x=mean_val + std_val, color='purple', linestyle=':', 
+                       label=f'Mean + 1σ: {mean_val + std_val:.2f}')
         else:
-            axes[0].axvline(x=upper_bound, color='purple', linestyle=':', 
-                           label=f'Mean + 1σ: {mean_val + std_val:.2f} (beyond view)')
+            ax.axvline(x=upper_bound, color='purple', linestyle=':', 
+                       label=f'Mean + 1σ: {mean_val + std_val:.2f} (beyond view)')
             
         if mean_val - std_val >= data_vis.min() and mean_val - std_val > 0:
-            axes[0].axvline(x=mean_val - std_val, color='purple', linestyle=':', 
-                           label=f'Mean - 1σ: {mean_val - std_val:.2f}')
+            ax.axvline(x=mean_val - std_val, color='purple', linestyle=':', 
+                       label=f'Mean - 1σ: {mean_val - std_val:.2f}')
         elif mean_val - std_val > 0:
-            axes[0].axvline(x=data_vis.min(), color='purple', linestyle=':', 
-                           label=f'Mean - 1σ: {mean_val - std_val:.2f} (beyond view)')
+            ax.axvline(x=data_vis.min(), color='purple', linestyle=':', 
+                       label=f'Mean - 1σ: {mean_val - std_val:.2f} (beyond view)')
         
         # 3σ boundaries for outlier detection
         if cutoff_high <= upper_bound:
-            axes[0].axvline(x=cutoff_high, color='red', linestyle='--', 
-                           label=f'3σ upper bound: {cutoff_high:.2f}')
+            ax.axvline(x=cutoff_high, color='red', linestyle='--', 
+                       label=f'3σ upper bound: {cutoff_high:.2f}')
         else:
-            axes[0].axvline(x=upper_bound, color='red', linestyle='--', 
-                           label=f'3σ upper bound: {cutoff_high:.2f} (beyond view)')
+            ax.axvline(x=upper_bound, color='red', linestyle='--', 
+                       label=f'3σ upper bound: {cutoff_high:.2f} (beyond view)')
             
         if cutoff_low >= data_vis.min() and cutoff_low > 0:
-            axes[0].axvline(x=cutoff_low, color='red', linestyle='--', 
-                           label=f'3σ lower bound: {cutoff_low:.2f}')
+            ax.axvline(x=cutoff_low, color='red', linestyle='--', 
+                       label=f'3σ lower bound: {cutoff_low:.2f}')
         elif cutoff_low > 0:
-            axes[0].axvline(x=data_vis.min(), color='red', linestyle='--', 
-                           label=f'3σ lower bound: {cutoff_low:.2f} (beyond view)')
+            ax.axvline(x=data_vis.min(), color='red', linestyle='--', 
+                       label=f'3σ lower bound: {cutoff_low:.2f} (beyond view)')
         
         # Add legend to histogram
-        axes[0].legend(loc='upper right', fontsize='small')
-
-        # Boxplot
-        sns.boxplot(x=data_vis, ax=axes[1], color='orange')
-        axes[1].set_title("Boxplot")
-        axes[1].set_xlabel(col)
-        
-        # Add vertical lines for statistics on boxplot
-        # Mean
-        axes[1].axvline(x=mean_val, color='green', linestyle='-')
-        
-        # Standard deviation lines (±1σ)
-        if mean_val + std_val <= upper_bound:
-            axes[1].axvline(x=mean_val + std_val, color='purple', linestyle=':')
-        
-        if mean_val - std_val >= data_vis.min() and mean_val - std_val > 0:
-            axes[1].axvline(x=mean_val - std_val, color='purple', linestyle=':')
-        
-        # 3σ boundaries for outlier detection
-        if cutoff_high <= upper_bound:
-            axes[1].axvline(x=cutoff_high, color='red', linestyle='--')
-        else:
-            axes[1].axvline(x=upper_bound, color='red', linestyle='--')
-            
-        if cutoff_low >= data_vis.min() and cutoff_low > 0:
-            axes[1].axvline(x=cutoff_low, color='red', linestyle='--')
-        
-        # Add text annotations for boxplot
-        y_pos = 0.9
-        axes[1].text(0.02, y_pos, f"Mean: {mean_val:.2f}", transform=axes[1].transAxes, 
-                    color='green', fontsize=9, ha='left')
-        axes[1].text(0.02, y_pos-0.05, f"Median: {median_val:.2f}", transform=axes[1].transAxes, 
-                    color='blue', fontsize=9, ha='left')
-        axes[1].text(0.02, y_pos-0.10, f"Var: {var_val:.2f}", transform=axes[1].transAxes, 
-                    color='purple', fontsize=9, ha='left')
-        axes[1].text(0.02, y_pos-0.15, f"Std: {std_val:.2f}", transform=axes[1].transAxes, 
-                    color='purple', fontsize=9, ha='left')
-        axes[1].text(0.02, y_pos-0.20, f"Outliers (±3σ): {len(outliers)}", transform=axes[1].transAxes, 
-                    color='red', fontsize=9, ha='left')
+        ax.legend(loc='upper right', fontsize='small')
 
         plt.tight_layout()
 

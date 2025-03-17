@@ -206,19 +206,26 @@ def plot_bootstrap_coefs(df_coefs, outdir):
     sns.set_style("whitegrid")
     cols = df_coefs.columns
     num_params = len(cols)
-    fig, axes = plt.subplots(1, num_params, figsize=(4*num_params,4), sharey=False)
-
-    if num_params == 1:
-        axes=[axes]
+    
+    # Change from 1 row of 4 to 2 rows of 2
+    nrows = 2
+    ncols = 2
+    fig, axes = plt.subplots(nrows, ncols, figsize=(10, 8), sharey=False)
+    axes = axes.flatten()  # Flatten to easily iterate
 
     for i, col in enumerate(cols):
-        sns.histplot(df_coefs[col], kde=True, ax=axes[i], color='purple', alpha=0.4)
-        mean_val = df_coefs[col].mean()
-        std_val  = df_coefs[col].std()
-        axes[i].axvline(mean_val, color='red', linestyle='--', label=f"Mean={mean_val:.2f}")
-        axes[i].axvspan(mean_val - std_val, mean_val + std_val, color='red', alpha=0.1)
-        axes[i].set_title(f"{col}\nMean={mean_val:.2f}, Std={std_val:.2f}")
-        axes[i].legend()
+        if i < len(axes):  # Ensure we don't exceed the number of subplots
+            sns.histplot(df_coefs[col], kde=True, ax=axes[i], color='purple', alpha=0.4)
+            mean_val = df_coefs[col].mean()
+            std_val  = df_coefs[col].std()
+            axes[i].axvline(mean_val, color='red', linestyle='--', label=f"Mean={mean_val:.2f}")
+            axes[i].axvspan(mean_val - std_val, mean_val + std_val, color='red', alpha=0.1)
+            axes[i].set_title(f"{col}\nMean={mean_val:.2f}, Std={std_val:.2f}")
+            axes[i].legend()
+    
+    # Hide any unused subplots
+    for i in range(num_params, len(axes)):
+        axes[i].set_visible(False)
 
     plt.tight_layout()
     outpath = os.path.join(outdir, "bootstrap_coefs.png")
@@ -262,18 +269,25 @@ def plot_coef_std_vs_sample_fraction(df_var, outdir):
     """
     sns.set_style("whitegrid")
     params = df_var.columns
-    n_param= len(params)
-    fig, axes = plt.subplots(1, n_param, figsize=(4*n_param,4), sharey=False)
-
-    if n_param==1:
-        axes = [axes]
+    n_param = len(params)
+    
+    # Change from 1 row of 4 to 2 rows of 2
+    nrows = 2
+    ncols = 2
+    fig, axes = plt.subplots(nrows, ncols, figsize=(10, 8), sharey=False)
+    axes = axes.flatten()  # Flatten to easily iterate
 
     for i, param in enumerate(params):
-        axes[i].plot(df_var.index, df_var[param], marker='o', color='blue')
-        axes[i].set_title(f"Std Dev of '{param}' vs. Sample Fraction")
-        axes[i].set_xlabel("Sample Fraction")
-        axes[i].set_ylabel("Std Dev of Coeff")
-        axes[i].grid(True)
+        if i < len(axes):  # Ensure we don't exceed the number of subplots
+            axes[i].plot(df_var.index, df_var[param], marker='o', color='blue')
+            axes[i].set_title(f"Std Dev of '{param}' vs. Sample Fraction")
+            axes[i].set_xlabel("Sample Fraction")
+            axes[i].set_ylabel("Std Dev of Coeff")
+            axes[i].grid(True)
+    
+    # Hide any unused subplots
+    for i in range(n_param, len(axes)):
+        axes[i].set_visible(False)
 
     plt.tight_layout()
     outpath = os.path.join(outdir, "coef_stdev_vs_samplefraction.png")

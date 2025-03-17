@@ -11,7 +11,8 @@ def main():
         python embed_listings_in_place.py listings.csv
 
     1) Loads listings.csv (which has columns like 'id', 'description', etc.).
-    2) Embeds each listing's 'description' using a local sentence transformer model.
+    2) Embeds each listing's 'description' using a sentence transformer model.
+       (Will download the model if not available locally)
     3) Computes similarity to the word 'great'.
     4) Stores the numeric similarity in a new column 'score_goodness'.
     5) Outputs a new CSV 'listings_with_goodness.csv'.
@@ -59,27 +60,49 @@ def main():
     print(f"Number of listings: {len(df)}")
 
     # ----------------------------------------------------------------
-    # 3. Initialize a local model
+    # 3. Initialize the embedding model
     # ----------------------------------------------------------------
-    # Try models that are likely to be available locally
-    local_models = [
-        "thenlper/gte-small",  # Found in cache
-        "sentence-transformers/all-MiniLM-L6-v2",  # Found in cache
-        "all-MiniLM-L6-v2"  # Fallback
+    # Define models to try, in order of preference
+    models_to_try = [
+        "thenlper/gte-small",  # Smaller, faster model
+        "sentence-transformers/all-MiniLM-L6-v2",  # Popular, well-balanced model
+        "all-MiniLM-L6-v2"  # Fallback name format
     ]
     
     model = None
-    for model_name in local_models:
+    for model_name in models_to_try:
         try:
-            print(f"Trying to load local model: {model_name}")
-            model = SentenceTransformer(model_name, cache_folder=os.path.expanduser("~/.cache/huggingface/hub"))
+            print(f"Attempting to load model: {model_name}")
+            print("(If this is your first time using this model, it will be downloaded automatically)")
+            print("Note: No Hugging Face account is required for these public models")
+            
+            # Use default cache folder and don't require token authentication
+            # This ensures it works without a Hugging Face account
+            model = SentenceTransformer(model_name, 
+                                        cache_folder=os.path.expanduser("~/.cache/huggingface/hub"),
+                                        token=None)  # Explicitly set token to None to avoid auth
+            
             print(f"Successfully loaded model: {model_name}")
             break
         except Exception as e:
             print(f"Failed to load {model_name}: {str(e)}")
+            
+            # Check for specific auth-related errors
+            if "401 Client Error" in str(e) or "authentication" in str(e).lower():
+                print("This appears to be an authentication error.")
+                print("Trying next model...")
+            elif "Connection" in str(e) or "Timeout" in str(e):
+                print("This appears to be a network error.")
+                print("Checking internet connection and trying next model...")
     
     if model is None:
-        print("Error: Could not load any embedding model. Exiting.")
+        print("\nError: Could not load any embedding model.")
+        print("This could be due to network issues or missing dependencies.")
+        print("Please ensure you have an internet connection and try again.")
+        print("You can also manually install the required packages with:")
+        print("pip install -U sentence-transformers torch")
+        print("\nNote: The models used in this script are public and do NOT require")
+        print("a Hugging Face account or authentication token.")
         sys.exit(1)
 
     # ----------------------------------------------------------------
