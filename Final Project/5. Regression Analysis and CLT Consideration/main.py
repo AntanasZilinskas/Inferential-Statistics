@@ -1,21 +1,22 @@
 """
-advanced_regression_clt.py
+main.py
 
-Task 5: Regression Analysis & CLT Demonstration
-with Extra Enhancements:
------------------------------------------------
-1) Multiple Linear Regression (response='price'),
-   Predictors: ['bedrooms', 'bathrooms', 'distance_km'].
-2) Model Fit Summary (R^2, Coefficients, Interpretation).
+Task 5: Regression + CLT, with "Above and Beyond" Enhancements
+and ±3σ Outlier Removal
+--------------------------------------------------------------
+We predict 'price' from ['bedrooms','bathrooms','distance_km'],
+and remove ±3σ outliers in these columns before fitting.
+
+Steps:
+1) Remove ±3σ outliers in [price, bedrooms, bathrooms, distance_km].
+2) Fit full OLS, show summary.
 3) Residual Diagnostics (resid vs fitted, Q-Q plot).
-4) 5-Fold Cross-Validation (MSE, R^2).
-5) Bootstrap Coefficients & Compare Empirical CIs to Analytic OLS CIs.
-6) Demonstrate how bigger sample fractions reduce coefficient variance
-   (overlay how increasing the "batch size" of random sub-samples
-    shrinks the standard deviation of estimated coefficients).
+4) 5-Fold Cross-Validation (R^2, MSE).
+5) Bootstrap for coefficient distributions (compare to analytic CIs).
+6) Demonstrate how bigger sample fraction => smaller coef variance
+   (a direct CLT illustration).
 
-The last part (#6) helps show the CLT:
-As sample size grows, the standard error of estimates goes down.
+Generates multiple figures in 'figures_task5_advanced/'.
 """
 
 import os
@@ -27,50 +28,63 @@ import matplotlib.pyplot as plt
 from statsmodels.regression.linear_model import OLS
 from statsmodels.tools import add_constant
 
-# For cross-validation
+# Cross-validation
 from sklearn.model_selection import KFold
 from sklearn.metrics import mean_squared_error, r2_score
 
+# ----------------- SETTINGS -----------------
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PARENT_DIR  = os.path.dirname(CURRENT_DIR)
 CSV_FILE    = os.path.join(PARENT_DIR, "listings_with_goodness.csv")
 
 RESPONSE_COL = "price"
 PREDICTORS   = ["bedrooms", "bathrooms", "distance_km"]
+OUTLIER_COLS = [RESPONSE_COL] + PREDICTORS  # columns to apply ±3σ filter
 
-FIGURES_DIR  = os.path.join(CURRENT_DIR, "figures_task5_advanced")
+FIGURES_DIR  = os.path.join(CURRENT_DIR, "figures")
 os.makedirs(FIGURES_DIR, exist_ok=True)
 
-N_BOOTSTRAP  = 500  # for the bootstrap (can set 1000 if desired)
-SAMPLE_FRACTIONS = [0.2, 0.4, 0.6, 0.8]  # to show how coefficient var shrinks with bigger "batch size"
+N_BOOTSTRAP     = 500     # for the bootstrap
+SAMPLE_FRACTIONS= [0.2,0.4,0.6,0.8] # for sub-sampling demonstration
+# -------------------------------------------
 
 
 def main():
-    # 1) Load data
+    print(f"Reading data from: {CSV_FILE}")
     df = pd.read_csv(CSV_FILE, low_memory=True)
-    needed = [RESPONSE_COL] + PREDICTORS
-    df_sub = df[needed].dropna()
-    print(f"Data size after dropping NA in {needed}: {len(df_sub)} rows")
 
-    # 2) Full OLS model
+    # 1) Drop missing values in the needed columns
+    df_sub = df[OUTLIER_COLS].dropna()
+    print(f"Data size after dropping NA in {OUTLIER_COLS}: {len(df_sub)}")
+
+    # 2) Remove ±3σ outliers for these columns
+    df_sub = remove_outliers_3sigma_global(df_sub, OUTLIER_COLS)
+    print(f"Data size after ±3σ outlier removal: {len(df_sub)}")
+
+    # 3) Fit OLS on the entire dataset
     X_full = add_constant(df_sub[PREDICTORS])
     y_full = df_sub[RESPONSE_COL]
     model_full = OLS(y_full, X_full).fit()
     print("\n=== FULL MODEL SUMMARY ===")
     print(model_full.summary())
 
-    # 3) Residual Diagnostics
+    # 4) Residual Diagnostics
     plot_residual_diagnostics(model_full, X_full, y_full, FIGURES_DIR)
 
-    # 4) 5-Fold Cross-Validation
+    # 5) 5-Fold Cross Validation
     cv_res = run_kfold_cv(df_sub, RESPONSE_COL, PREDICTORS, n_splits=5)
+    mean_r2  = np.mean(cv_res['r2'])
+    std_r2   = np.std(cv_res['r2'])
+    mean_mse = np.mean(cv_res['mse'])
+    std_mse  = np.std(cv_res['mse'])
     print("\n=== 5-Fold Cross-Validation ===")
-    print(f"Mean R^2 = {np.mean(cv_res['r2']):.3f} ± {np.std(cv_res['r2']):.3f}")
-    print(f"Mean MSE = {np.mean(cv_res['mse']):.3f} ± {np.std(cv_res['mse']):.3f}")
+    print(f"Mean R^2 = {mean_r2:.3f} ± {std_r2:.3f}")
+    print(f"Mean MSE = {mean_mse:.3f} ± {std_mse:.3f}")
 
-    # 5) Bootstrap: coefficient distributions + compare to OLS intervals
+    # 6) Bootstrap: collect coefficient distributions
     df_coefs_boot, dict_cis = bootstrap_coefficients(df_sub, n_boot=N_BOOTSTRAP)
     conf_analytic = model_full.conf_int(alpha=0.05)
+
     print("\n=== Bootstrap vs. Analytic Confidence Intervals (95%) ===")
     for param in model_full.params.index:
         b_low, b_high = dict_cis[param]
@@ -81,19 +95,30 @@ def main():
 
     plot_bootstrap_coefs(df_coefs_boot, FIGURES_DIR)
 
-    # 6) Demonstrate that bigger sample fraction => smaller coefficient variance
-    # We'll do repeated sub-sampling for each fraction in SAMPLE_FRACTIONS,
-    # store std dev of each coefficient, then plot them.
+    # 7) Show how coefficient std dev shrinks with bigger sample fraction
     df_var = vary_sample_size_coefs(df_sub, fractions=SAMPLE_FRACTIONS, n_rep=100)
-    # df_var: rows = fraction, columns = each param -> standard deviation
     plot_coef_std_vs_sample_fraction(df_var, FIGURES_DIR)
 
-    print("\nDone. All advanced analysis steps completed.")
+    print("\nAll advanced steps (with ±3σ outlier removal) completed.")
+
+
+def remove_outliers_3sigma_global(df, cols):
+    """
+    Removes rows where *any* column in cols is beyond ±3σ for that column.
+    """
+    df_clean = df.copy()
+    for c in cols:
+        mean_c = df_clean[c].mean()
+        std_c  = df_clean[c].std()
+        lower  = mean_c - 3.0*std_c
+        upper  = mean_c + 3.0*std_c
+        df_clean = df_clean[(df_clean[c]>=lower) & (df_clean[c]<=upper)]
+    return df_clean
 
 
 def plot_residual_diagnostics(model, X, y, outdir):
     """
-    1) Residuals vs. Fitted
+    1) Residual vs Fitted
     2) Q-Q plot
     """
     fitted_vals = model.fittedvalues
@@ -124,22 +149,23 @@ def plot_residual_diagnostics(model, X, y, outdir):
 
 def run_kfold_cv(df, resp, preds, n_splits=5):
     """
-    5-fold CV using statsmodels OLS. Return R^2, MSE for each fold.
+    KFold CV with statsmodels OLS. Return R^2, MSE for each fold.
     """
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
     X_all = df[preds].values
     y_all = df[resp].values
 
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
     r2_list, mse_list = [], []
+
     for train_idx, test_idx in kf.split(X_all):
         X_train, X_test = X_all[train_idx], X_all[test_idx]
         y_train, y_test = y_all[train_idx], y_all[test_idx]
 
         X_train_c = add_constant(X_train)
-        model_cv = OLS(y_train, X_train_c).fit()
+        model_fold = OLS(y_train, X_train_c).fit()
 
         X_test_c = add_constant(X_test)
-        y_pred = model_cv.predict(X_test_c)
+        y_pred = model_fold.predict(X_test_c)
 
         r2_list.append(r2_score(y_test, y_pred))
         mse_list.append(mean_squared_error(y_test, y_pred))
@@ -149,17 +175,12 @@ def run_kfold_cv(df, resp, preds, n_splits=5):
 
 def bootstrap_coefficients(df, n_boot=500, alpha=0.05):
     """
-    For each bootstrap:
-      1) sample df w/ replacement
-      2) fit OLS on (price ~ bedrooms + bathrooms + distance_km)
-      3) store param estimates
-    Return:
-      df_coefs (DataFrame: n_boot x [const, bedrooms, bathrooms, distance_km])
-      dict_cis (param -> (lowCI, highCI))
+    Repeatedly sample w/ replacement -> fit OLS -> store coefs.
+    Return (df_coefs, dict_cis).
     """
     np.random.seed(42)
-    n = len(df)
     coefs_records = []
+    n = len(df)
 
     for _ in range(n_boot):
         df_samp = df.sample(n=n, replace=True)
@@ -172,7 +193,7 @@ def bootstrap_coefficients(df, n_boot=500, alpha=0.05):
     dict_cis = {}
     for col in df_coefs.columns:
         lower = np.percentile(df_coefs[col], 100*alpha/2)
-        upper = np.percentile(df_coefs[col], 100*(1 - alpha/2))
+        upper = np.percentile(df_coefs[col], 100*(1-alpha/2))
         dict_cis[col] = (lower, upper)
 
     return df_coefs, dict_cis
@@ -180,7 +201,7 @@ def bootstrap_coefficients(df, n_boot=500, alpha=0.05):
 
 def plot_bootstrap_coefs(df_coefs, outdir):
     """
-    Plot distribution of each coefficient from bootstrap.
+    Plot distributions of bootstrap coefficient estimates.
     """
     sns.set_style("whitegrid")
     cols = df_coefs.columns
@@ -188,7 +209,7 @@ def plot_bootstrap_coefs(df_coefs, outdir):
     fig, axes = plt.subplots(1, num_params, figsize=(4*num_params,4), sharey=False)
 
     if num_params == 1:
-        axes = [axes]
+        axes=[axes]
 
     for i, col in enumerate(cols):
         sns.histplot(df_coefs[col], kde=True, ax=axes[i], color='purple', alpha=0.4)
@@ -196,7 +217,7 @@ def plot_bootstrap_coefs(df_coefs, outdir):
         std_val  = df_coefs[col].std()
         axes[i].axvline(mean_val, color='red', linestyle='--', label=f"Mean={mean_val:.2f}")
         axes[i].axvspan(mean_val - std_val, mean_val + std_val, color='red', alpha=0.1)
-        axes[i].set_title(f"{col}\nMean={mean_val:.2f}, STD={std_val:.2f}")
+        axes[i].set_title(f"{col}\nMean={mean_val:.2f}, Std={std_val:.2f}")
         axes[i].legend()
 
     plt.tight_layout()
@@ -208,19 +229,13 @@ def plot_bootstrap_coefs(df_coefs, outdir):
 
 def vary_sample_size_coefs(df, fractions=[0.2,0.4,0.6,0.8], n_rep=50):
     """
-    Show how coefficient std dev shrinks with bigger sample fraction.
-    For each fraction f in fractions:
-      - sample f*N rows from df (no replacement)
-      - fit OLS
-      - repeat n_rep times
-      - compute std dev of the coefficient estimates
-
-    Return a DataFrame with index=fraction and columns=[const, bedrooms, bathrooms, distance_km]
-    containing the std dev of each coefficient for that fraction.
+    For each fraction f, do n_rep sub-samples (no replacement),
+    fit OLS, record coefs, compute std dev of each param.
+    Return DataFrame with index=fraction, columns=coefs' std dev.
     """
-    results = {}
     np.random.seed(42)
     N = len(df)
+    results = {}
 
     for frac in fractions:
         coefs_records = []
@@ -236,24 +251,22 @@ def vary_sample_size_coefs(df, fractions=[0.2,0.4,0.6,0.8], n_rep=50):
         std_series = df_coefs.std()
         results[frac] = std_series
 
-    df_var = pd.DataFrame(results).T  # index=fraction, columns=coef names
+    df_var = pd.DataFrame(results).T  # fraction as index, param names as columns
     return df_var
 
 
 def plot_coef_std_vs_sample_fraction(df_var, outdir):
     """
-    df_var: index = fraction, columns = [const, bedrooms, bathrooms, distance_km]
-    We plot each column's std dev vs sample fraction.
-    This shows how coefficient uncertainty decreases with bigger sample fraction.
+    df_var: index=fraction, columns=[const, bedrooms, bathrooms, distance_km].
+    We plot each param's std dev vs. fraction.
     """
-    # We'll do separate subplots for each coefficient
     sns.set_style("whitegrid")
     params = df_var.columns
-    num_params = len(params)
-    fig, axes = plt.subplots(1, num_params, figsize=(4*num_params,4), sharey=False)
+    n_param= len(params)
+    fig, axes = plt.subplots(1, n_param, figsize=(4*n_param,4), sharey=False)
 
-    if num_params==1:
-        axes=[axes]
+    if n_param==1:
+        axes = [axes]
 
     for i, param in enumerate(params):
         axes[i].plot(df_var.index, df_var[param], marker='o', color='blue')
