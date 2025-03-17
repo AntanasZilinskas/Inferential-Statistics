@@ -76,11 +76,11 @@ def main():
             print("(If this is your first time using this model, it will be downloaded automatically)")
             print("Note: No Hugging Face account is required for these public models")
             
-            # Use default cache folder and don't require token authentication
+            # Using default cache folder and don't require token authentication
             # This ensures it works without a Hugging Face account
             model = SentenceTransformer(model_name, 
                                         cache_folder=os.path.expanduser("~/.cache/huggingface/hub"),
-                                        token=None)  # Explicitly set token to None to avoid auth
+                                        token=None) 
             
             print(f"Successfully loaded model: {model_name}")
             break
